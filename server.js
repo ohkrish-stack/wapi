@@ -179,6 +179,17 @@ app.post('/instance/:id/pairing-code', async (req, res) => {
 async function initSession(instanceId) {
     if (sessions.has(instanceId)) return sessions.get(instanceId);
 
+    let version = [2, 3000, 1015901307];
+    try {
+        const versionInfo = await fetchLatestBaileysVersion();
+        if (versionInfo && versionInfo.version) {
+            version = versionInfo.version;
+            console.log(`[Instance ${instanceId}] Fetched WhatsApp protocol version: ${version.join('.')}`);
+        }
+    } catch (e) {
+        console.warn("Failed to fetch latest Baileys version, using default fallback:", e.message);
+    }
+
     const sessionDir = path.join(__dirname, 'sessions', instanceId);
     if (!fs.existsSync(sessionDir)) {
         fs.mkdirSync(sessionDir, { recursive: true });
@@ -186,6 +197,7 @@ async function initSession(instanceId) {
 
     const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
     const sock = makeWASocket({
+        version,
         auth: state,
         printQRInTerminal: false,
         browser: Browsers ? Browsers.ubuntu('Chrome') : ['Ubuntu', 'Chrome', '20.0.04'],
