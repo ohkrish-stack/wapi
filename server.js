@@ -11,7 +11,8 @@ if (!global.crypto) {
 const express = require('express');
 const cors = require('cors');
 const qrcode = require('qrcode');
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, Browsers } = require('@whiskeysockets/baileys');
+const pino = require('pino');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, Browsers, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const path = require('path');
 const fs = require('fs');
 
@@ -199,6 +200,7 @@ async function initSession(instanceId) {
     const sock = makeWASocket({
         version,
         auth: state,
+        logger: pino({ level: 'silent' }),
         printQRInTerminal: false,
         browser: Browsers ? Browsers.ubuntu('Chrome') : ['Ubuntu', 'Chrome', '20.0.04'],
         markOnlineOnConnect: false,
