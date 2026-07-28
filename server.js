@@ -202,12 +202,13 @@ async function initSession(instanceId) {
         auth: state,
         logger: pino({ level: 'silent' }),
         printQRInTerminal: false,
-        browser: Browsers ? Browsers.ubuntu('Chrome') : ['Ubuntu', 'Chrome', '20.0.04'],
-        markOnlineOnConnect: false,
+        browser: Browsers ? Browsers.macOS('Desktop') : ['Mac OS', 'Chrome', '120.0.0.0'],
+        markOnlineOnConnect: true,
         syncFullHistory: false,
-        connectTimeoutMs: 60000,
-        defaultQueryTimeoutMs: 60000,
-        keepAliveIntervalMs: 30000
+        generateHighQualityLinkPreview: true,
+        connectTimeoutMs: 90000,
+        defaultQueryTimeoutMs: 90000,
+        keepAliveIntervalMs: 25000
     });
 
     sessions.set(instanceId, sock);
