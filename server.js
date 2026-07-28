@@ -21,6 +21,7 @@ app.use(cors());
 
 const PORT = process.env.PORT || 3000;
 const sessions = new Map();
+const sessionPromises = new Map();
 const qrCodes = new Map();
 
 // Handle cPanel Phusion Passenger subpath routing
@@ -31,7 +32,7 @@ app.use((req, res, next) => {
 
 // Health Check
 app.get('/health', (req, res) => {
-    res.json({ status: 'ok', engine: 'Baileys', active_sessions: sessions.size });
+    res.json({ status: 'ok', engine: 'Baileys', active_sessions: sessions.size, active_qrs: qrCodes.size });
 });
 
 // Helper to reset and clean session state if socket gets stuck
@@ -43,6 +44,7 @@ function resetSession(instanceId) {
         } catch (e) {}
         sessions.delete(instanceId);
     }
+    sessionPromises.delete(instanceId);
     qrCodes.delete(instanceId);
     const sessionDir = path.join(__dirname, 'sessions', instanceId);
     try {
@@ -52,27 +54,46 @@ function resetSession(instanceId) {
     } catch (e) {}
 }
 
+async function getOrInitSession(instanceId) {
+    if (sessions.has(instanceId)) {
+        return sessions.get(instanceId);
+    }
+    if (sessionPromises.has(instanceId)) {
+        return sessionPromises.get(instanceId);
+    }
+
+    const promise = (async () => {
+        try {
+            const sock = await initSession(instanceId);
+            return sock;
+        } finally {
+            sessionPromises.delete(instanceId);
+        }
+    })();
+
+    sessionPromises.set(instanceId, promise);
+    return promise;
+}
+
 // Get QR Code Data URL for Instance
 app.get('/instance/:id/qr', async (req, res) => {
     const instanceId = req.params.id;
+
     if (qrCodes.has(instanceId)) {
-        return res.json({ status: 'qr_ready', qr: qrCodes.get(instanceId) });
+        return res.json({ status: 'qr_ready', qr: qrCodes.get(instanceId), qr_data: qrCodes.get(instanceId) });
     }
     
-    // Start session if not existing
-    let sock = sessions.get(instanceId);
-    if (!sock) {
-        sock = await initSession(instanceId);
-    }
+    // Ensure session is initializing asynchronously
+    getOrInitSession(instanceId);
     
     let attempts = 0;
     const interval = setInterval(() => {
         attempts++;
         if (qrCodes.has(instanceId)) {
             clearInterval(interval);
-            return res.json({ status: 'qr_ready', qr: qrCodes.get(instanceId) });
+            return res.json({ status: 'qr_ready', qr: qrCodes.get(instanceId), qr_data: qrCodes.get(instanceId) });
         }
-        if (attempts >= 16) { // wait up to 8 seconds
+        if (attempts >= 20) {
             clearInterval(interval);
             return res.json({ status: 'connecting', message: 'Generating fresh QR code...' });
         }
@@ -118,27 +139,21 @@ app.post('/instance/:id/pairing-code', async (req, res) => {
     }
 
     try {
-        // Reset session folder to ensure clean unregistered state for pairing code
-        resetSession(instanceId);
-        const sock = await initSession(instanceId);
-
-        // Wait 1.5 seconds for socket connection to open
-        await new Promise(r => setTimeout(r, 1500));
+        let sock = await getOrInitSession(instanceId);
 
         let code = null;
-        try {
-            if (sock && typeof sock.requestPairingCode === 'function') {
-                code = await sock.requestPairingCode(cleanPhone);
-            }
-        } catch (err) {
-            console.error(`[Instance ${instanceId}] Pairing code error:`, err.message);
-            // Retry once after 1 second delay
-            await new Promise(r => setTimeout(r, 1200));
+        let lastErr = null;
+
+        for (let attempt = 1; attempt <= 10; attempt++) {
             try {
                 if (sock && typeof sock.requestPairingCode === 'function') {
                     code = await sock.requestPairingCode(cleanPhone);
+                    if (code) break;
                 }
-            } catch(e) {}
+            } catch (err) {
+                lastErr = err.message;
+                await new Promise(r => setTimeout(r, 800));
+            }
         }
 
         if (code) {
@@ -148,7 +163,8 @@ app.post('/instance/:id/pairing-code', async (req, res) => {
 
         return res.status(500).json({ 
             status: 'error', 
-            error: 'WhatsApp WebSocket is opening. Please click Get Code again in 3 seconds.'
+            error: 'WhatsApp WebSocket is initializing. Please wait 3 seconds and click Get Code again.',
+            details: lastErr
         });
     } catch (err) {
         console.error(`[Instance ${instanceId}] Pairing code endpoint exception:`, err.message);
@@ -169,7 +185,7 @@ async function initSession(instanceId) {
     const sock = makeWASocket({
         auth: state,
         printQRInTerminal: false,
-        browser: Browsers ? Browsers.ubuntu('Chrome') : ['Ubuntu', 'Chrome', '20.0.04'],
+        browser: ['Ubuntu', 'Chrome', '20.0.04'],
         markOnlineOnConnect: false,
         syncFullHistory: false,
         connectTimeoutMs: 60000,
@@ -184,12 +200,13 @@ async function initSession(instanceId) {
         const { connection, lastDisconnect, qr } = update;
         
         if (qr) {
+            console.log(`[Instance ${instanceId}] Live QR string received! Length: ${qr.length}`);
             try {
                 const qrImage = await qrcode.toDataURL(qr);
                 qrCodes.set(instanceId, qrImage);
-                console.log(`[Instance ${instanceId}] Live Baileys QR code received!`);
             } catch (e) {
-                console.error("QR generation error:", e);
+                console.error("QR generation error, storing raw QR string:", e);
+                qrCodes.set(instanceId, qr);
             }
         }
 
@@ -220,7 +237,7 @@ async function initSession(instanceId) {
             sessions.delete(instanceId);
             qrCodes.delete(instanceId);
 
-            if (statusCode === DisconnectReason.loggedOut || statusCode === 401 || statusCode === 403 || statusCode === 428) {
+            if (statusCode === DisconnectReason.loggedOut || statusCode === 401 || statusCode === 403) {
                 try {
                     fs.rmSync(sessionDir, { recursive: true, force: true });
                 } catch(e) {}
