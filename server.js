@@ -83,9 +83,13 @@ app.get('/instance/:id/qr', async (req, res) => {
     if (qrCodes.has(instanceId)) {
         return res.json({ status: 'qr_ready', qr: qrCodes.get(instanceId), qr_data: qrCodes.get(instanceId) });
     }
-    
-    // Ensure session is initializing asynchronously
-    getOrInitSession(instanceId);
+
+    let sock = sessions.get(instanceId);
+    if (!sock || !sock.user) {
+        // Purge stale auth files to guarantee matching Noise keys during phone scan
+        resetSession(instanceId);
+        sock = await initSession(instanceId);
+    }
     
     let attempts = 0;
     const interval = setInterval(() => {
