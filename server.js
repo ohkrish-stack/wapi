@@ -118,25 +118,27 @@ app.post('/instance/:id/pairing-code', async (req, res) => {
     }
 
     try {
-        let sock = sessions.get(instanceId);
-        if (!sock) {
-            sock = await initSession(instanceId);
-        }
+        // Reset session folder to ensure clean unregistered state for pairing code
+        resetSession(instanceId);
+        const sock = await initSession(instanceId);
 
-        // Wait up to 10 seconds for pairing code
+        // Wait 1.5 seconds for socket connection to open
+        await new Promise(r => setTimeout(r, 1500));
+
         let code = null;
-        let lastErr = null;
-
-        for (let attempt = 1; attempt <= 10; attempt++) {
+        try {
+            if (sock && typeof sock.requestPairingCode === 'function') {
+                code = await sock.requestPairingCode(cleanPhone);
+            }
+        } catch (err) {
+            console.error(`[Instance ${instanceId}] Pairing code error:`, err.message);
+            // Retry once after 1 second delay
+            await new Promise(r => setTimeout(r, 1200));
             try {
                 if (sock && typeof sock.requestPairingCode === 'function') {
                     code = await sock.requestPairingCode(cleanPhone);
-                    if (code) break;
                 }
-            } catch (err) {
-                lastErr = err.message;
-                await new Promise(r => setTimeout(r, 800));
-            }
+            } catch(e) {}
         }
 
         if (code) {
@@ -146,8 +148,7 @@ app.post('/instance/:id/pairing-code', async (req, res) => {
 
         return res.status(500).json({ 
             status: 'error', 
-            error: 'WhatsApp server connection timeout. Please wait 3 seconds and click Get Code again.',
-            details: lastErr
+            error: 'WhatsApp WebSocket is opening. Please click Get Code again in 3 seconds.'
         });
     } catch (err) {
         console.error(`[Instance ${instanceId}] Pairing code endpoint exception:`, err.message);
