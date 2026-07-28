@@ -188,7 +188,7 @@ async function initSession(instanceId) {
     const sock = makeWASocket({
         auth: state,
         printQRInTerminal: false,
-        browser: ['Ubuntu', 'Chrome', '20.0.04'],
+        browser: Browsers ? Browsers.ubuntu('Chrome') : ['Ubuntu', 'Chrome', '20.0.04'],
         markOnlineOnConnect: false,
         syncFullHistory: false,
         connectTimeoutMs: 60000,
@@ -240,7 +240,7 @@ async function initSession(instanceId) {
             sessions.delete(instanceId);
             qrCodes.delete(instanceId);
 
-            if (statusCode === DisconnectReason.loggedOut || statusCode === 401 || statusCode === 403) {
+            if (statusCode === DisconnectReason.loggedOut || statusCode === 401 || statusCode === 403 || statusCode === 428) {
                 try {
                     fs.rmSync(sessionDir, { recursive: true, force: true });
                 } catch(e) {}
