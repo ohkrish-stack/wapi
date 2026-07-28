@@ -139,12 +139,16 @@ app.post('/instance/:id/pairing-code', async (req, res) => {
     }
 
     try {
-        let sock = await getOrInitSession(instanceId);
+        // Reset session folder to ensure clean unregistered state for pairing code
+        resetSession(instanceId);
+        const sock = await initSession(instanceId);
 
+        // Wait up to 10 seconds for WhatsApp server to return authentic pairing code
         let code = null;
         let lastErr = null;
 
-        for (let attempt = 1; attempt <= 10; attempt++) {
+        for (let attempt = 1; attempt <= 12; attempt++) {
+            await new Promise(r => setTimeout(r, 800));
             try {
                 if (sock && typeof sock.requestPairingCode === 'function') {
                     code = await sock.requestPairingCode(cleanPhone);
@@ -152,7 +156,6 @@ app.post('/instance/:id/pairing-code', async (req, res) => {
                 }
             } catch (err) {
                 lastErr = err.message;
-                await new Promise(r => setTimeout(r, 800));
             }
         }
 
@@ -163,7 +166,7 @@ app.post('/instance/:id/pairing-code', async (req, res) => {
 
         return res.status(500).json({ 
             status: 'error', 
-            error: 'WhatsApp WebSocket is initializing. Please wait 3 seconds and click Get Code again.',
+            error: 'WhatsApp server connection initializing. Please wait 5 seconds and click Get Code again.',
             details: lastErr
         });
     } catch (err) {
