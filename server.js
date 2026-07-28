@@ -206,13 +206,20 @@ async function initSession(instanceId) {
         auth: state,
         logger: pino({ level: 'silent' }),
         printQRInTerminal: false,
-        browser: Browsers ? Browsers.macOS('Desktop') : ['Mac OS', 'Chrome', '120.0.0.0'],
+        waWebSocketUrl: 'wss://web.whatsapp.com/ws/chat',
+        wsOptions: {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Origin': 'https://web.whatsapp.com'
+            }
+        },
+        browser: ['Mac OS', 'Chrome', '120.0.0.0'],
         markOnlineOnConnect: true,
         syncFullHistory: false,
         generateHighQualityLinkPreview: true,
         connectTimeoutMs: 90000,
         defaultQueryTimeoutMs: 90000,
-        keepAliveIntervalMs: 25000
+        keepAliveIntervalMs: 20000
     });
 
     sessions.set(instanceId, sock);
